@@ -33,9 +33,16 @@ async function initDB() {
       fecha VARCHAR(100) NOT NULL,
       horario VARCHAR(10) NOT NULL,
       precio INTEGER NOT NULL,
+      estado VARCHAR(20) DEFAULT 'confirmada',
       fecha_creacion TIMESTAMP DEFAULT NOW()
     )
   `);
+
+  // Agregar columna estado si la tabla ya existía sin ella
+  await pool.query(`
+    ALTER TABLE reservas ADD COLUMN IF NOT EXISTS estado VARCHAR(20) DEFAULT 'confirmada'
+  `);
+
   console.log('Base de datos lista');
 }
 
@@ -46,7 +53,7 @@ app.get('/disponibilidad', async (req, res) => {
   if (!cancha || !fecha) return res.status(400).json({ error: 'Faltan parámetros' });
   try {
     const result = await pool.query(
-      'SELECT horario FROM reservas WHERE cancha = $1 AND fecha = $2',
+      "SELECT horario FROM reservas WHERE cancha = $1 AND fecha = $2 AND estado != 'cancelada'",
       [cancha, fecha]
     );
     res.json({ ocupados: result.rows.map(r => r.horario) });
@@ -63,7 +70,7 @@ app.post('/reservar', async (req, res) => {
   }
   try {
     const check = await pool.query(
-      'SELECT id FROM reservas WHERE cancha = $1 AND fecha = $2 AND horario = $3',
+      "SELECT id FROM reservas WHERE cancha = $1 AND fecha = $2 AND horario = $3 AND estado != 'cancelada'",
       [cancha, fecha, horario]
     );
     if (check.rows.length > 0) {
@@ -88,6 +95,21 @@ app.post('/reservar', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al guardar la reserva' });
+  }
+});
+
+// Cancelar una reserva
+app.post('/cancelar/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query(
+      "UPDATE reservas SET estado = 'cancelada' WHERE id = $1",
+      [id]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al cancelar' });
   }
 });
 
